@@ -6,9 +6,9 @@ local Players = game:GetService("Players")
 local req = (syn and syn.request) or (http and http.request) or http_request or request
 
 local CONFIG = {
-    WEBHOOK_URL = "PASTE_WEBHOOK_URL_HERE",
+    WEBHOOK_URL = "https://discord.com/api/webhooks/1483471565130825791/-LjvHco3PqatsN5KAmDW96yktGJr9gKj-2E6wqL5EWZzOK8UHSEzQo2FF4vSGcaNIcGD",
     WEBHOOK_ENABLED = true,
-    WEBHOOK_COOLDOWN = 15,
+    WEBHOOK_COOLDOWN = 5,
 }
 
 local WEATHER_INFO = {
