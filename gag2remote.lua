@@ -25,7 +25,7 @@ end
 
 -- 1. Quét tất cả RemoteEvent và RemoteFunction có tên liên quan
 print("===== Đang quét Remotes liên quan =====")
-local keywords = {"shop", "stock", "seed", "gear", "crate", "inventory", "item", "buy", "purchase"}
+local keywords = {"shop", "stock", "seeds", "gear", "props", "inventory", "item", "buy", "purchase"}
 local foundRemotes = {}
 
 for _, obj in pairs(game:GetDescendants()) do
@@ -87,7 +87,7 @@ if getgc then
             local hasShop = rawget(v, "Shop") or rawget(v, "shop") or rawget(v, "Store")
             local hasSeeds = rawget(v, "Seeds") or rawget(v, "seeds")
             local hasGears = rawget(v, "Gears") or rawget(v, "gears")
-            local hasCrates = rawget(v, "Crates") or rawget(v, "crates")
+            local hasCrates = rawget(v, "Props") or rawget(v, "props")
             if hasShop or hasSeeds or hasGears or hasCrates then
                 print("Tìm thấy bảng nghi ngờ chứa dữ liệu shop:")
                 printTable(v)
@@ -112,7 +112,7 @@ if getloadedmodules then
             for _, c in ipairs(constants) do
                 if type(c) == "string" then
                     local lower = c:lower()
-                    if lower:find("seed") or lower:find("gear") or lower:find("crate") or lower:find("shop") then
+                    if lower:find("seed") or lower:find("gear") or lower:find("props") or lower:find("shop") then
                         print("Module: " .. module.Name .. " chứa chuỗi: " .. c)
                     end
                 end
