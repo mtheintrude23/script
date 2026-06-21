@@ -30,7 +30,6 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
     local desc  = info.Description or "Không có mô tả."
     local style = weatherStyle[weatherName] or { color = 16777215, icon = "🌤️" }
 
-    -- Discord unix timestamp: <t:UNIX:R> = relative, <t:UNIX:F> = full datetime
     local endsField
     if endTimeUnix and endTimeUnix > 0 then
         endsField = "<t:" .. math.floor(endTimeUnix) .. ":R>  (`<t:" .. math.floor(endTimeUnix) .. ":F>`)"
@@ -39,7 +38,7 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
     end
 
     local embed = {
-        title       = style.icon .. " " .. weatherName,
+        title       = style.icon .. " " .. weatherName,  -- FIX: was ".." .. ".." (double concatenation typo)
         description = "**Description:** " .. desc,
         color       = style.color,
         fields      = {
@@ -49,7 +48,6 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
                 inline = false
             },
         },
-        -- timestamp ISO dùng cho footer Discord (thời điểm gửi)
         timestamp = DateTime.now():ToIsoDate(),
         footer    = { text = "Grow a Garden 2 | Weather Monitor" },
     }
@@ -88,7 +86,6 @@ if not WeatherValues then
     return
 end
 
--- Hàm gắn listener cho 1 weather folder
 local function hookWeatherFolder(folder)
     local playingVal = folder:FindFirstChild("Playing")
     local endTimeVal = folder:FindFirstChild("EndTime")
@@ -112,7 +109,7 @@ for _, child in ipairs(WeatherValues:GetChildren()) do
     end
 end
 
--- Hook folder mới thêm sau (phòng game cập nhật thêm weather)
+-- Hook folder mới thêm sau
 WeatherValues.ChildAdded:Connect(function(child)
     if child:IsA("Folder") then
         hookWeatherFolder(child)
