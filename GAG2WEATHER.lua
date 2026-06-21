@@ -21,20 +21,31 @@ local weatherStyle = {
     ["Clear"]     = { color = 16753920, icon = "☀️" },
 }
 
+-- WeatherData module là array đánh số {1={Name="Lightning",...}, 2=...}
+-- nên phải tìm theo field Name thay vì dùng tên làm key
+local function getWeatherInfo(weatherName)
+    for _, entry in ipairs(weatherDataList) do
+        if entry.Name == weatherName then
+            return entry
+        end
+    end
+    return {}
+end
+
 -- ========================================================
 -- GỬI WEBHOOK
 -- endTimeUnix: số unix timestamp lấy từ EndTime value
 -- ========================================================
 local function sendWeatherWebhook(weatherName, endTimeUnix)
-    local info  = weatherDataList[weatherName] or {}
-    local desc  = info.Description or "Không có mô tả."
+    local info  = getWeatherInfo(weatherName)
+    local desc  = info.Description or "No description"
     local style = weatherStyle[weatherName] or { color = 16777215, icon = "🌤️" }
 
     local endsField
     if endTimeUnix and endTimeUnix > 0 then
         endsField = "<t:" .. math.floor(endTimeUnix) .. ":R>  (`<t:" .. math.floor(endTimeUnix) .. ":F>`)"
     else
-        endsField = "Không rõ"
+        endsField = "None"
     end
 
     local embed = {
@@ -72,7 +83,7 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
         end
     end)
 
-    print("📢 [WEATHER] Đã gửi -> " .. weatherName .. " | Ends: " .. tostring(endTimeUnix))
+    print("📢 [WEATHER] Sent -> " .. weatherName .. " | Ends: " .. tostring(endTimeUnix))
 end
 
 -- ========================================================
@@ -82,7 +93,7 @@ end
 local WeatherValues = ReplicatedStorage:WaitForChild("WeatherValues", 10)
 
 if not WeatherValues then
-    warn("❌ Không tìm thấy ReplicatedStorage.WeatherValues")
+    warn("❌ Cannot Find ReplicatedStorage.WeatherValues")
     return
 end
 
@@ -99,7 +110,7 @@ local function hookWeatherFolder(folder)
         end
     end)
 
-    print("✅ Đã hook: " .. folder.Name)
+    print("✅ Saw: " .. folder.Name)
 end
 
 -- Hook tất cả folder hiện có
@@ -128,4 +139,4 @@ for _, folder in ipairs(WeatherValues:GetChildren()) do
     end
 end
 
-print("🌦️ Weather Monitor đang chạy — đang lắng nghe WeatherValues...")
+print("🌦️ Weather Monitor is running — listening to WeatherValues...")
