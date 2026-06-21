@@ -4,7 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- ========================================================
 -- WEBHOOK CONFIG
 -- ========================================================
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
+local WEBHOOK_URL = "https://webhook.lewisakura.moe/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
 -- ========================================================
 
 -- WeatherData: ReplicatedStorage.SharedModules.WeatherData
