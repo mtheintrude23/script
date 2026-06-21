@@ -39,7 +39,7 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
     end
 
     local embed = {
-        title       = style.icon .. .. weatherName,
+        title       = style.icon .. " " .. weatherName,
         description = "**Description:** " .. desc,
         color       = style.color,
         fields      = {
