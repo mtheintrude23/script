@@ -7,7 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
 -- ========================================================
 
--- WeatherData is at ReplicatedStorage.SharedModules.WeatherData
+-- WeatherData: ReplicatedStorage.SharedModules.WeatherData
 -- Module returns { Data = { {Name, Last, Description, ...}, ... } }
 local rawModule = require(ReplicatedStorage.SharedModules.WeatherData)
 local weatherDataList = rawModule.Data or {}
@@ -38,8 +38,23 @@ local weatherStyle = {
 }
 
 -- ========================================================
+-- HTTP REQUEST FUNCTION (Delta / other executors)
+-- ========================================================
+local function getRequestFunc()
+    if typeof(http) == "table" and typeof(http.request) == "function" then
+        return http.request
+    elseif typeof(request) == "function" then
+        return request
+    elseif typeof(http_request) == "function" then
+        return http_request
+    elseif syn and typeof(syn.request) == "function" then
+        return syn.request
+    end
+    return nil
+end
+
+-- ========================================================
 -- SEND WEBHOOK
--- endTimeUnix: unix timestamp from WeatherValues attribute {Name}_EndTime
 -- ========================================================
 local function sendWeatherWebhook(weatherName, endTimeUnix)
     local info  = getWeatherInfo(weatherName)
@@ -48,7 +63,6 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
 
     local endsField
     if endTimeUnix and endTimeUnix > 0 then
-        -- <t:UNIX:R> = relative "in 4 minutes", <t:UNIX:F> = full date/time
         endsField = "<t:" .. math.floor(endTimeUnix) .. ":R> (<t:" .. math.floor(endTimeUnix) .. ":F>)"
     else
         endsField = "Unknown"
@@ -72,11 +86,7 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
     local payload = HttpService:JSONEncode({ embeds = { embed } })
 
     pcall(function()
-        local requestFunc = syn and syn.request
-            or http and http.request
-            or (typeof(request) == "function" and request)
-            or (typeof(http_request) == "function" and http_request)
-
+        local requestFunc = getRequestFunc()
         if requestFunc then
             requestFunc({
                 Url     = WEBHOOK_URL,
@@ -85,28 +95,24 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
                 Body    = payload,
             })
         else
-            HttpService:PostAsync(WEBHOOK_URL, payload)
+            warn("No HTTP request function found!")
         end
     end)
 
-    print("📢 [WEATHER] Sent -> " .. weatherName .. " | Ends: " .. tostring(endTimeUnix))
+    print("Sent -> " .. weatherName .. " | Ends: " .. tostring(endTimeUnix))
 end
 
 -- ========================================================
 -- MONITOR WeatherValues via ATTRIBUTES
--- Game uses: WeatherValues attribute "Rain_Playing" (bool), "Rain_EndTime" (unix)
--- Source confirmed from WeatherController decompile:
---   v_u_7:GetAttribute(p_u_32 .. "_Playing")
---   v_u_7:GetAttribute(p_u_11 .. "_EndTime")
+-- Rain_Playing (bool), Rain_EndTime (unix timestamp)
 -- ========================================================
 local WeatherValues = ReplicatedStorage:WaitForChild("WeatherValues", 10)
 
 if not WeatherValues then
-    warn("❌ ReplicatedStorage.WeatherValues not found")
+    warn("ReplicatedStorage.WeatherValues not found")
     return
 end
 
--- Hook attribute changes for a specific weather name
 local function hookWeather(weatherName)
     local playingAttr = weatherName .. "_Playing"
     local endTimeAttr = weatherName .. "_EndTime"
@@ -119,7 +125,7 @@ local function hookWeather(weatherName)
         end
     end)
 
-    print("✅ Hooked attribute: " .. playingAttr)
+    print("Hooked: " .. playingAttr)
 end
 
 -- Hook all weathers from WeatherData module
@@ -127,7 +133,7 @@ for _, entry in ipairs(weatherDataList) do
     hookWeather(entry.Name)
 end
 
--- Check immediately if any weather is already active on script start
+-- Check immediately if any weather is already active
 for _, entry in ipairs(weatherDataList) do
     local isPlaying = WeatherValues:GetAttribute(entry.Name .. "_Playing")
     if isPlaying then
@@ -136,41 +142,4 @@ for _, entry in ipairs(weatherDataList) do
     end
 end
 
-print("🌦️ Weather Monitor running — listening to WeatherValues attributes...")
-    playingVal.Changed:Connect(function(isPlaying)
-        if isPlaying then
-            local endUnix = (endTimeVal and endTimeVal.Value > 0) and endTimeVal.Value or 0
-            sendWeatherWebhook(folder.Name, endUnix)
-        end
-    end)
-
-    print("✅ Hooked: " .. folder.Name)
-end
-
--- Hook all existing folders
-for _, child in ipairs(WeatherValues:GetChildren()) do
-    if child:IsA("Folder") then
-        hookWeatherFolder(child)
-    end
-end
-
--- Hook any folders added later
-WeatherValues.ChildAdded:Connect(function(child)
-    if child:IsA("Folder") then
-        hookWeatherFolder(child)
-    end
-end)
-
--- Check immediately if any weather is already active on script start
-for _, folder in ipairs(WeatherValues:GetChildren()) do
-    if folder:IsA("Folder") then
-        local playingVal = folder:FindFirstChild("Playing")
-        local endTimeVal = folder:FindFirstChild("EndTime")
-        if playingVal and playingVal.Value == true then
-            local endUnix = (endTimeVal and endTimeVal.Value > 0) and endTimeVal.Value or 0
-            sendWeatherWebhook(folder.Name, endUnix)
-        end
-    end
-end
-
-print("🌦️ Weather Monitor running — listening to WeatherValues...")
+print("Weather Monitor running...")
