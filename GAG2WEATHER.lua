@@ -2,14 +2,21 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- ========================================================
--- CẤU HÌNH WEBHOOK
+-- WEBHOOK CONFIG
 -- ========================================================
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
 -- ========================================================
 
--- Lấy description từ WeatherData module (nếu có)
-local weatherModule = game:FindFirstChild("WeatherData", true)
-local weatherDataList = weatherModule and require(weatherModule) or {}
+-- WeatherData is nested under .Data array
+local weatherModule = ReplicatedStorage:FindFirstChild("SharedModules", true)
+    and ReplicatedStorage.SharedModules:FindFirstChild("WeatherData")
+local rawModule = weatherModule and require(weatherModule) or {}
+local weatherDataList = rawModule.Data or {}
+
+-- Strip Roblox <font color="...">text</font> tags for plain Discord text
+local function stripRichText(str)
+    return (str:gsub("<[^>]+>", ""))
+end
 
 local weatherStyle = {
     ["Rain"]      = { color = 3447003,  icon = "🌧️" },
@@ -21,8 +28,7 @@ local weatherStyle = {
     ["Clear"]     = { color = 16753920, icon = "☀️" },
 }
 
--- WeatherData module là array đánh số {1={Name="Lightning",...}, 2=...}
--- nên phải tìm theo field Name thay vì dùng tên làm key
+-- Search WeatherData array by Name field
 local function getWeatherInfo(weatherName)
     for _, entry in ipairs(weatherDataList) do
         if entry.Name == weatherName then
@@ -33,28 +39,28 @@ local function getWeatherInfo(weatherName)
 end
 
 -- ========================================================
--- GỬI WEBHOOK
--- endTimeUnix: số unix timestamp lấy từ EndTime value
+-- SEND WEBHOOK
+-- endTimeUnix: unix timestamp from EndTime value
 -- ========================================================
 local function sendWeatherWebhook(weatherName, endTimeUnix)
     local info  = getWeatherInfo(weatherName)
-    local desc  = info.Description or "No description"
+    local desc  = info.Description and stripRichText(info.Description) or "No description."
     local style = weatherStyle[weatherName] or { color = 16777215, icon = "🌤️" }
 
     local endsField
     if endTimeUnix and endTimeUnix > 0 then
-        endsField = "<t:" .. math.floor(endTimeUnix) .. ":R>  (`<t:" .. math.floor(endTimeUnix) .. ":F>`)"
+        endsField = "<t:" .. math.floor(endTimeUnix) .. ":R> (<t:" .. math.floor(endTimeUnix) .. ":F>)"
     else
-        endsField = "None"
+        endsField = "Unknown"
     end
 
     local embed = {
-        title       = style.icon .. " " .. weatherName,  -- FIX: was ".." .. ".." (double concatenation typo)
+        title       = style.icon .. " Weather Changed: " .. weatherName,
         description = "**Description:** " .. desc,
         color       = style.color,
         fields      = {
             {
-                name   = "Ends in:",
+                name   = "⏳ Ends:",
                 value  = endsField,
                 inline = false
             },
@@ -87,13 +93,13 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
 end
 
 -- ========================================================
--- THEO DÕI WeatherValues
--- Mỗi Folder con = 1 loại thời tiết, có BoolValue "Playing" và NumberValue "EndTime"
+-- MONITOR WeatherValues
+-- Each child Folder = 1 weather type, with BoolValue "Playing" and NumberValue "EndTime"
 -- ========================================================
 local WeatherValues = ReplicatedStorage:WaitForChild("WeatherValues", 10)
 
 if not WeatherValues then
-    warn("❌ Cannot Find ReplicatedStorage.WeatherValues")
+    warn("❌ ReplicatedStorage.WeatherValues not found")
     return
 end
 
@@ -110,24 +116,24 @@ local function hookWeatherFolder(folder)
         end
     end)
 
-    print("✅ Saw: " .. folder.Name)
+    print("✅ Hooked: " .. folder.Name)
 end
 
--- Hook tất cả folder hiện có
+-- Hook all existing folders
 for _, child in ipairs(WeatherValues:GetChildren()) do
     if child:IsA("Folder") then
         hookWeatherFolder(child)
     end
 end
 
--- Hook folder mới thêm sau
+-- Hook any folders added later
 WeatherValues.ChildAdded:Connect(function(child)
     if child:IsA("Folder") then
         hookWeatherFolder(child)
     end
 end)
 
--- Kiểm tra ngay lúc script chạy xem có weather nào đang Playing không
+-- Check immediately if any weather is already active on script start
 for _, folder in ipairs(WeatherValues:GetChildren()) do
     if folder:IsA("Folder") then
         local playingVal = folder:FindFirstChild("Playing")
@@ -139,4 +145,4 @@ for _, folder in ipairs(WeatherValues:GetChildren()) do
     end
 end
 
-print("🌦️ Weather Monitor is running — listening to WeatherValues...")
+print("🌦️ Weather Monitor running — listening to WeatherValues...")
