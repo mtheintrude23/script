@@ -3,98 +3,188 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local stockValues = ReplicatedStorage:WaitForChild("StockValues")
 
 -- ========================================================
--- CẤU HÌNH WEBHOOK (Thay link của bạn vào đây)
+-- CONFIG (fill in your own values here)
 -- ========================================================
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1483471565130825791/-LjvHco3PqatsN5KAmDW96yktGJr9gKj-2E6wqL5EWZzOK8UHSEzQo2FF4vSGcaNIcGD"
 
--- Nếu muốn giấu link khi share script, xóa dòng trên và mở khóa dòng dưới:
--- local WEBHOOK_URL = getgenv().DISCORD_WEBHOOK
+-- API endpoint that receives the raw JSON data directly (NOT a Discord webhook).
+-- Put your real API URL here (e.g. http://node1.minet.vn:25960/api/ghz/stock)
+local API_URL = "http://node1.minet.vn:25960/api/ghz/stock"
+
+-- Set to false if you don't want the Discord notification anymore, only the API push
+local SEND_WEBHOOK_NOTIFICATION = true
 -- ========================================================
 
 if not WEBHOOK_URL or WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_URL_HERE" then
-    warn("❌ Chưa điền link Webhook Discord vào đầu script kìa bor!")
-    return
+    warn("❌ Discord webhook URL is not set!")
+    SEND_WEBHOOK_NOTIFICATION = false
 end
 
+if not API_URL or API_URL == "" or API_URL == "http://node1.minet.vn:25960/api/ghz/stock" then
+    warn("⚠️ API_URL is not set — the script will NOT push directly to the API, only send the webhook (if enabled).")
+end
+
+-- key = field name used in the payload sent to the API, label = display title, emoji for the embed
 local shopConfigs = {
-    SeedShop = { title = "Seed Shop Restocked", color = 3066993 },
-    CrateShop = { title = "Crates Shop Restocked", color = 15844367 },
-    GearShop = { title = "Gear Shop Restocked", color = 3447003 }
+    SeedShop  = { key = "seeds", label = "🌱 Seeds Restocked",       color = 3066993 },
+    GearShop  = { key = "gear",  label = "⚙️ Gear Stock Restocked",  color = 3447003 },
+    CrateShop = { key = "props", label = "📦 Crates Stock",          color = 15844367 },
 }
 
-local function sendWebhook(embed)
-    local payload = HttpService:JSONEncode({
-        embeds = { embed }
-    })
-    
-    local successReq, err = pcall(function()
-        -- Ưu tiên dùng hàm request của Executor, nếu không có thì dùng HttpService thuần
+-- How long until the next restock, in milliseconds (used for "nextUpdateAt").
+-- Adjust this to match the real in-game restock interval if it differs.
+local NEXT_UPDATE_INTERVAL_MS = 5 * 60 * 1000 -- 5 minutes
+
+-- Fixed order so the embed always displays Seeds -> Gear -> Crates
+local SHOP_ORDER = { "SeedShop", "GearShop", "CrateShop" }
+
+-- ── Shared HTTP helper for both the webhook and the API push ──
+local function httpPostJson(url, bodyTable)
+    if not url or url == "" or url:match("^YOUR_") then
+        return false, "URL is not configured"
+    end
+
+    local payload = HttpService:JSONEncode(bodyTable)
+
+    local ok, errOrRes = pcall(function()
         local requestFunc = syn and syn.request or http and http.request or request or http_request
         if requestFunc then
             return requestFunc({
-                Url = WEBHOOK_URL,
+                Url = url,
                 Method = "POST",
                 Headers = { ["Content-Type"] = "application/json" },
                 Body = payload
             })
         else
-            return HttpService:PostAsync(WEBHOOK_URL, payload)
+            return HttpService:PostAsync(url, payload)
         end
     end)
-    
-    if successReq then
-        print("⚡ [GỬI LIỀN] Đã push embed cho: " .. embed.title)
-    else
-        warn("❌ Lỗi khi gửi Webhook: ", err)
-    end
+
+    return ok, errOrRes
 end
 
-local function processSingleShopAndPush(shopName)
-    local config = shopConfigs[shopName]
-    if not config then return end
-    
+-- ── Read all current items (Value > 0) for one shop ──
+local function getShopItems(shopName)
+    local items = {}
+
     local shopFolder = stockValues:FindFirstChild(shopName)
-    if not shopFolder then return end
-    
+    if not shopFolder then return items end
+
     local itemsFolder = shopFolder:FindFirstChild("Items")
-    if not itemsFolder then return end
-    
-    local fields = {}
-    
+    if not itemsFolder then return items end
+
     for _, child in ipairs(itemsFolder:GetChildren()) do
         if string.find(child.ClassName, "Value") and child.Value > 0 then
-            table.insert(fields, {
-                name = child.Name,
-                value = "x" .. tostring(child.Value),
-                inline = false
-            })
+            table.insert(items, { name = child.Name, value = child.Value })
         end
     end
-    
-    if #fields > 0 then
-        local embed = {
-            title = config.title,
-            description = "A new rotation of stock is available.",
-            color = config.color,
-            fields = fields,
-            timestamp = DateTime.now():ToIsoDate(),
-            footer = {
-                text = "Grow a Garden 2"
-            }
-        }
-        sendWebhook(embed)
+
+    return items
+end
+
+-- ── Collect current data for all 3 shops ──
+local function collectAllShops()
+    local snapshot = {}
+    for _, shopName in ipairs(SHOP_ORDER) do
+        snapshot[shopName] = getShopItems(shopName)
+    end
+    return snapshot
+end
+
+-- ── Build a SINGLE combined embed, each shop as its own code-block section ──
+local function buildCombinedEmbed(snapshot)
+    local descParts = {}
+    local hasAny = false
+
+    for _, shopName in ipairs(SHOP_ORDER) do
+        local config = shopConfigs[shopName]
+        local items = snapshot[shopName]
+
+        if items and #items > 0 then
+            hasAny = true
+            local lines = {}
+            for _, item in ipairs(items) do
+                table.insert(lines, item.name .. ": x" .. tostring(item.value))
+            end
+            table.insert(
+                descParts,
+                "**" .. config.label .. "**\n```\n" .. table.concat(lines, "\n") .. "\n```"
+            )
+        end
+    end
+
+    if not hasAny then return nil end
+
+    return {
+        title = "🛒 Stock Update",
+        description = table.concat(descParts, "\n\n"),
+        color = 5793266, -- neutral color for the combined embed
+        timestamp = DateTime.now():ToIsoDate(),
+        footer = { text = "Grow a Garden 2" }
+    }
+end
+
+-- ── Build the JSON payload sent directly to the API ──
+-- Matches the schema: { seeds: [{name, qty}], gear: [...], props: [...], reportedAt, nextUpdateAt }
+-- reportedAt / nextUpdateAt are Unix timestamps in MILLISECONDS.
+local function buildApiPayload(snapshot)
+    local now = DateTime.now()
+    local reportedAt = now.UnixTimestampMillis
+    local nextUpdateAt = reportedAt + NEXT_UPDATE_INTERVAL_MS
+
+    local payload = {
+        reportedAt = reportedAt,
+        nextUpdateAt = nextUpdateAt
+    }
+
+    for _, shopName in ipairs(SHOP_ORDER) do
+        local config = shopConfigs[shopName]
+        local items = snapshot[shopName]
+        local list = {}
+        for _, item in ipairs(items or {}) do
+            table.insert(list, { name = item.name, qty = item.value })
+        end
+        payload[config.key] = list
+    end
+
+    return payload
+end
+
+-- ── Send out: 1 webhook embed (if enabled) + push JSON directly to the API ──
+local function pushUpdate()
+    local snapshot = collectAllShops()
+
+    if SEND_WEBHOOK_NOTIFICATION then
+        local embed = buildCombinedEmbed(snapshot)
+        if embed then
+            local ok, err = httpPostJson(WEBHOOK_URL, { embeds = { embed } })
+            if ok then
+                print("⚡ [Webhook] Combined embed sent.")
+            else
+                warn("❌ [Webhook] Send failed: ", err)
+            end
+        end
+    end
+
+    local apiPayload = buildApiPayload(snapshot)
+    local ok, err = httpPostJson(API_URL, apiPayload)
+    if ok then
+        print("🚀 [API] Data pushed directly to the API.")
+    else
+        warn("❌ [API] Push failed: ", err)
     end
 end
 
-local pendingUpdates = {}
+-- ── Global debounce: multiple shops changing close together -> only 1 push ──
+local pendingGlobalUpdate = false
 
-local function queueShopUpdate(shopName)
-    if pendingUpdates[shopName] then return end
-    pendingUpdates[shopName] = true
-    
-    task.defer(function()
-        processSingleShopAndPush(shopName)
-        pendingUpdates[shopName] = false
+local function queueGlobalUpdate()
+    if pendingGlobalUpdate then return end
+    pendingGlobalUpdate = true
+
+    task.delay(0.5, function()
+        pushUpdate()
+        pendingGlobalUpdate = false
     end)
 end
 
@@ -106,31 +196,23 @@ local function startListening()
             if itemsFolder then
                 for _, child in ipairs(itemsFolder:GetChildren()) do
                     if string.find(child.ClassName, "Value") then
-                        child.Changed:Connect(function()
-                            queueShopUpdate(shopName)
-                        end)
+                        child.Changed:Connect(queueGlobalUpdate)
                     end
                 end
-                
+
                 itemsFolder.ChildAdded:Connect(function(child)
                     if string.find(child.ClassName, "Value") then
-                        child.Changed:Connect(function()
-                            queueShopUpdate(shopName)
-                        end)
-                        queueShopUpdate(shopName)
+                        child.Changed:Connect(queueGlobalUpdate)
+                        queueGlobalUpdate()
                     end
                 end)
             end
         end
     end
-    print("🚀 [System]: I've enabled the STOCK SCHEDULE mode (Send immediately when value changes)! ")
+    print("🚀 [System]: STOCK SCHEDULE mode enabled (3 shops combined, direct API push)!")
 end
 
--- Quét phát đầu tiên khi kích hoạt script
-for shopName, _ in pairs(shopConfigs) do
-    processSingleShopAndPush(shopName)
-    task.wait(0.2)
-end
+-- Initial scan + push when the script starts
+queueGlobalUpdate()
 
 startListening()
-
