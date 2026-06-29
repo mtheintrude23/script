@@ -20,7 +20,7 @@ if not WEBHOOK_URL or WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_
     SEND_WEBHOOK_NOTIFICATION = false
 end
 
-if not API_URL or API_URL == "" or API_URL == "http://node1.minet.vn:25960/api/ghz/stock" then
+if not API_URL or API_URL == "" or API_URL == "YOUR_API_URL_HERE" then
     warn("⚠️ API_URL is not set — the script will NOT push directly to the API, only send the webhook (if enabled).")
 end
 
@@ -175,15 +175,41 @@ local function pushUpdate()
     end
 end
 
--- ── Global debounce: multiple shops changing close together -> only 1 push ──
+-- ── Wait until ALL 3 shops have changed at least once before pushing ──
+-- (not just whichever shop happens to change first)
+local changedShops = {}
+for _, shopName in ipairs(SHOP_ORDER) do
+    changedShops[shopName] = false
+end
+
 local pendingGlobalUpdate = false
 
-local function queueGlobalUpdate()
-    if pendingGlobalUpdate then return end
-    pendingGlobalUpdate = true
+local function allShopsChanged()
+    for _, shopName in ipairs(SHOP_ORDER) do
+        if not changedShops[shopName] then
+            return false
+        end
+    end
+    return true
+end
 
+local function resetChangedFlags()
+    for _, shopName in ipairs(SHOP_ORDER) do
+        changedShops[shopName] = false
+    end
+end
+
+local function markShopChanged(shopName)
+    changedShops[shopName] = true
+
+    if pendingGlobalUpdate then return end
+    if not allShopsChanged() then return end
+
+    pendingGlobalUpdate = true
+    -- small delay to catch any last-moment changes that land at the same time
     task.delay(0.5, function()
         pushUpdate()
+        resetChangedFlags()
         pendingGlobalUpdate = false
     end)
 end
@@ -196,23 +222,27 @@ local function startListening()
             if itemsFolder then
                 for _, child in ipairs(itemsFolder:GetChildren()) do
                     if string.find(child.ClassName, "Value") then
-                        child.Changed:Connect(queueGlobalUpdate)
+                        child.Changed:Connect(function()
+                            markShopChanged(shopName)
+                        end)
                     end
                 end
 
                 itemsFolder.ChildAdded:Connect(function(child)
                     if string.find(child.ClassName, "Value") then
-                        child.Changed:Connect(queueGlobalUpdate)
-                        queueGlobalUpdate()
+                        child.Changed:Connect(function()
+                            markShopChanged(shopName)
+                        end)
+                        markShopChanged(shopName)
                     end
                 end)
             end
         end
     end
-    print("🚀 [System]: STOCK SCHEDULE mode enabled (3 shops combined, direct API push)!")
+    print("🚀 [System]: STOCK SCHEDULE mode enabled (waits for Seeds + Gear + Crates to all change, then pushes once)!")
 end
 
--- Initial scan + push when the script starts
-queueGlobalUpdate()
+-- Initial baseline push with whatever is currently in stock when the script starts
+pushUpdate()
 
 startListening()
