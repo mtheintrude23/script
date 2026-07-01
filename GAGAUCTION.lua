@@ -129,6 +129,7 @@ local function buildApiPayload(now)
             lotId = lotId,
             name = name,
             category = lot.category,
+            amount = lot.count or 1,
             startingPrice = startingPrice,
             minPrice = lot.minPrice,
             decrementPercent = lot.decrementPercent,
