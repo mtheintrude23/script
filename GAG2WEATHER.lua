@@ -28,13 +28,22 @@ local function getWeatherInfo(weatherName)
 end
 
 local weatherStyle = {
-    ["Rain"]      = { color = 3447003,  icon = "🌧️" },
-    ["Lightning"] = { color = 16776960, icon = "⚡" },
-    ["Rainbow"]   = { color = 16711935, icon = "🌈" },
-    ["Snowfall"]  = { color = 65535,    icon = "❄️" },
-    ["Starfall"]  = { color = 10181046, icon = "💫" },
-    ["Aurora"]    = { color = 5763719,  icon = "🌌" },
-    ["Clear"]     = { color = 16753920, icon = "☀️" },
+    ["Rain"]          = { color = 3447003,  icon = "🌧️" },
+    ["Lightning"]     = { color = 16776960, icon = "⚡" },
+    ["Rainbow"]       = { color = 16711935, icon = "🌈" },
+    ["Snowfall"]      = { color = 65535,    icon = "❄️" },
+    ["Starfall"]      = { color = 10181046, icon = "💫" },
+    ["Aurora"]        = { color = 5763719,  icon = "🌌" },
+    ["Clear"]         = { color = 16753920, icon = "☀️" },
+
+    -- Moon Weathers
+    ["Night"]         = { color = 0x2C3E50, icon = "🌙" },
+    ["Blood Moon"]    = { color = 0x8B0000, icon = "🩸" },
+    ["Meteor Shower"] = { color = 0x6A5ACD, icon = "☄️" },
+    ["Marrow Moon"]   = { color = 0xB5651D, icon = "🎑" },
+    ["Full Moon"]     = { color = 0xF5F3CE, icon = "🌕" },
+    ["Rainbow Moon"]  = { color = 0xC71585, icon = "🌈🌙" },
+    ["Gold Moon"]     = { color = 0xFFD700, icon = "🌕✨" },
 }
 
 -- ========================================================
