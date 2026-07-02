@@ -2,12 +2,14 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- ========================================================
--- WEBHOOK CONFIG
+-- WEBHOOK CONFIG (Updated to use Lewisakura Proxy)
 -- ========================================================
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
+local WEBHOOK_URL = "https://webhook.lewisakura.moe/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
 -- ========================================================
 
-local rawModule = require(ReplicatedStorage.SharedModules.WeatherData)
+local SharedModules = ReplicatedStorage:WaitForChild("SharedModules", 10)
+local WeatherDataModule = SharedModules and SharedModules:WaitForChild("WeatherData", 10)
+local rawModule = WeatherDataModule and require(WeatherDataModule) or {}
 local weatherDataList = rawModule.Data or {}
 
 local function stripRichText(str)
@@ -24,7 +26,7 @@ local function getWeatherInfo(weatherName)
 end
 
 -- ========================================================
--- WEATHER STYLES (rain/storm events)
+-- WEATHER STYLES
 -- ========================================================
 local weatherStyle = {
     ["Rain"]      = { color = 3447003,  icon = "🌧️" },
@@ -37,8 +39,7 @@ local weatherStyle = {
 }
 
 -- ========================================================
--- MOON STYLES (from TimeCycleData)
--- Only notify rare moons, skip normal Moon
+-- MOON STYLES
 -- ========================================================
 local moonStyle = {
     ["Bloodmoon"]    = { color = 10027008, icon = "🔴", rare = true,  chance = "2%",  des = "A mysterious crimson moon rises. and applied bloodlit mutations." },
@@ -51,28 +52,38 @@ local moonStyle = {
 }
 
 -- ========================================================
--- HTTP SEND
+-- HTTP SEND (Supports both Game Server and Executors)
 -- ========================================================
 local function sendRequest(body)
-    pcall(function()
+    local success, response = pcall(function()
+        -- Handle native Roblox server requests
+        if not syn and typeof(request) ~= "function" and typeof(http_request) ~= "function" then
+            return HttpService:PostAsync(WEBHOOK_URL, body, Enum.HttpContentType.ApplicationJson)
+        end
+        
+        -- Handle Executor environment requests (if applicable)
         if typeof(http) == "table" and typeof(http.request) == "function" then
-            http.request({ url = WEBHOOK_URL, method = "POST", headers = { ["Content-Type"] = "application/json" }, body = body })
+            return http.request({ url = WEBHOOK_URL, method = "POST", headers = { ["Content-Type"] = "application/json" }, body = body })
         elseif typeof(request) == "function" then
-            request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+            return request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         elseif typeof(http_request) == "function" then
             http_request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
-        elseif syn and typeof(syn.request) == "function" then
-            syn.request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         end
     end)
+
+    if not success then
+        warn("[WEBHOOK ERROR] Failed to send via Proxy: " .. tostring(response))
+        return false
+    end
+    return true
 end
 
 local function sendWebhook(payload)
-    sendRequest(HttpService:JSONEncode(payload))
+    return sendRequest(HttpService:JSONEncode(payload))
 end
 
 -- ========================================================
--- SEND WEATHER EVENT (Rain/Lightning etc)
+-- SEND WEATHER EVENT
 -- ========================================================
 local function sendWeatherWebhook(weatherName, endTimeUnix)
     local info  = getWeatherInfo(weatherName)
@@ -84,7 +95,7 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
         endsField = "<t:" .. math.floor(endTimeUnix) .. ":R> (<t:" .. math.floor(endTimeUnix) .. ":F>)"
     end
 
-    sendWebhook({
+    local payload = {
         embeds = {{
             title       = style.icon .. " Weather: " .. weatherName,
             description = "**Description:** " .. desc,
@@ -95,27 +106,23 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             footer    = { text = "Grow a Garden 2 | Weather Monitor" },
         }}
-    })
-    print("[WEATHER] Sent -> " .. weatherName)
+    }
+
+    if sendWebhook(payload) then
+        print("[WEATHER] Successfully sent via Proxy -> " .. weatherName)
+    end
 end
 
 -- ========================================================
 -- SEND MOON EVENT
--- Only sends for rare moons (Bloodmoon, Goldmoon, Rainbow Moon, Mega Moon)
 -- ========================================================
 local function sendMoonWebhook(moonName)
     local style = moonStyle[moonName]
     if not style or not style.rare then return end
 
-    -- Calculate night end time
-    -- Night phase lasts 120s from TimeCycleData
-    -- Day cycle total = 450+30+120 = 600s
     local now = os.time()
     local cycleTotal = 600
-    local nightDuration = 120
     local posInCycle = now % cycleTotal
-    -- Night starts at 480 (450+30), ends at 600
-    local nightStart = 480
     local nightEnd = cycleTotal
     local secondsLeftInNight = nightEnd - posInCycle
     if secondsLeftInNight < 0 then secondsLeftInNight = 0 end
@@ -125,7 +132,7 @@ local function sendMoonWebhook(moonName)
     local desc = style.des ~= "" and style.des or "No description."
     local chanceText = style.chance ~= "" and ("Spawn chance: **" .. style.chance .. "**") or ""
 
-    sendWebhook({
+    local payload = {
         embeds = {{
             title       = style.icon .. " Rare Moon: " .. moonName .. "!",
             description = "**Description:** " .. desc .. (chanceText ~= "" and ("\n" .. chanceText) or ""),
@@ -136,16 +143,19 @@ local function sendMoonWebhook(moonName)
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             footer    = { text = "Grow a Garden 2 | Moon Monitor" },
         }}
-    })
-    print("[MOON] Sent -> " .. moonName)
+    }
+
+    if sendWebhook(payload) then
+        print("[MOON] Successfully sent via Proxy -> " .. moonName)
+    end
 end
 
 -- ========================================================
--- MONITOR WeatherValues ATTRIBUTES (Rain/Lightning etc)
+-- MONITORING
 -- ========================================================
 local WeatherValues = ReplicatedStorage:WaitForChild("WeatherValues", 10)
 if not WeatherValues then
-    warn("WeatherValues not found")
+    warn("[ERROR] WeatherValues folder not found in ReplicatedStorage")
 else
     local function hookWeather(weatherName)
         WeatherValues:GetAttributeChangedSignal(weatherName .. "_Playing"):Connect(function()
@@ -160,7 +170,7 @@ else
         hookWeather(entry.Name)
     end
 
-    -- Check immediately if any weather already active
+    -- Initial check for already active weather
     for _, entry in ipairs(weatherDataList) do
         if WeatherValues:GetAttribute(entry.Name .. "_Playing") then
             local endUnix = WeatherValues:GetAttribute(entry.Name .. "_EndTime") or 0
@@ -169,42 +179,26 @@ else
     end
 end
 
--- ========================================================
--- MONITOR MOON via workspace.ActiveWeather attribute
--- TimeCycleController sets this each cycle
--- ========================================================
 local rareMoons = { "Bloodmoon", "Goldmoon", "Rainbow Moon", "Mega Moon" }
-
 local function isRareMoon(name)
-    for _, m in ipairs(rareMoons) do
-        if m == name then return true end
-    end
+    for _, m in ipairs(rareMoons) do if m == name then return true end end
     return false
 end
 
 local lastMoon = workspace:GetAttribute("ActiveWeather")
-
--- Check on start
-if lastMoon and isRareMoon(lastMoon) then
-    sendMoonWebhook(lastMoon)
-end
+if lastMoon and isRareMoon(lastMoon) then sendMoonWebhook(lastMoon) end
 
 workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(function()
     local current = workspace:GetAttribute("ActiveWeather")
     if current and current ~= lastMoon then
         lastMoon = current
-        if isRareMoon(current) then
-            sendMoonWebhook(current)
-        end
+        if isRareMoon(current) then sendMoonWebhook(current) end
     end
 end)
 
--- Also watch ActivePhase to catch night start
 workspace:GetAttributeChangedSignal("ActivePhase"):Connect(function()
-    local phase = workspace:GetAttribute("ActivePhase")
-    if phase == "Night" then
-        -- Re-check ActiveWeather when night starts
-        task.wait(1) -- give server time to set ActiveWeather
+    if workspace:GetAttribute("ActivePhase") == "Night" then
+        task.wait(1) -- Allow server buffer time to assign ActiveWeather
         local current = workspace:GetAttribute("ActiveWeather")
         if current and isRareMoon(current) then
             lastMoon = current
@@ -213,4 +207,4 @@ workspace:GetAttributeChangedSignal("ActivePhase"):Connect(function()
     end
 end)
 
-print("[WEATHER] Monitor running — watching weather events + rare moons...")
+print("[WEATHER] Monitor running stably on Server environment...")
