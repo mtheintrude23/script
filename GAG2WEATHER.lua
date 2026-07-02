@@ -49,6 +49,7 @@ local moonStyle = {
     ["Day"]          = { color = 16765952, icon = "☀️", rare = false, chance = "",    des = "" },
     ["Sunset"]       = { color = 16744272, icon = "🌅", rare = false, chance = "",    des = "" },
 }
+
 -- ========================================================
 -- HTTP SEND
 -- ========================================================
@@ -91,7 +92,7 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
             fields      = {
                 { name = "⏳ Ends:", value = endsField, inline = false },
             },
-            timestamp = DateTime.now():ToIsoDate(),
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             footer    = { text = "Grow a Garden 2 | Weather Monitor" },
         }}
     })
@@ -102,7 +103,6 @@ end
 -- SEND MOON EVENT
 -- Only sends for rare moons (Bloodmoon, Goldmoon, Rainbow Moon, Mega Moon)
 -- ========================================================
-local function sendMoonWebhook(moonName)
 local function sendMoonWebhook(moonName)
     local style = moonStyle[moonName]
     if not style or not style.rare then return end
@@ -127,19 +127,18 @@ local function sendMoonWebhook(moonName)
 
     sendWebhook({
         embeds = {{
-            title       = style.icon .. " Moon: " .. moonName .. "!",
+            title       = style.icon .. " Rare Moon: " .. moonName .. "!",
             description = "**Description:** " .. desc .. (chanceText ~= "" and ("\n" .. chanceText) or ""),
             color       = style.color,
             fields      = {
                 { name = "🌙 Night Ends:", value = endsField, inline = false },
             },
-            timestamp = DateTime.now():ToIsoDate(),
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
             footer    = { text = "Grow a Garden 2 | Moon Monitor" },
         }}
     })
     print("[MOON] Sent -> " .. moonName)
 end
-
 
 -- ========================================================
 -- MONITOR WeatherValues ATTRIBUTES (Rain/Lightning etc)
