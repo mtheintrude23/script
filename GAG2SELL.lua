@@ -6,7 +6,7 @@ local HttpService = game:GetService("HttpService")
 -------------------------------------------------
 -------------------------------------------------
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1522976371779833876/gP7rTiS61XchHLMuzNpzzwygUzB4zTCiJV-CwLpPHz3FXQeLXoPBJ4bdizRkJOYgtfIq"
-local API_URL = "http://node1.minet.vn:25960/api/fruit-price" -- Đổi tên route cho khớp
+local API_URL = "https://v2.nthanhtai.xyz/api/fruit-price" -- Đổi tên route cho khớp
 
 -------------------------------------------------
 -- MODULES
