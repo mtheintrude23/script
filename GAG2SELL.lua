@@ -1,12 +1,9 @@
-
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
--------------------------------------------------
--------------------------------------------------
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1522976371779833876/gP7rTiS61XchHLMuzNpzzwygUzB4zTCiJV-CwLpPHz3FXQeLXoPBJ4bdizRkJOYgtfIq"
-local API_URL = "https://v2.nthanhtai.xyz/api/fruit-price" -- Đổi tên route cho khớp
+
+local API_URL = "https://v2.nthanhtai.xyz/api/fruit-price" 
 
 -------------------------------------------------
 -- MODULES
@@ -35,13 +32,22 @@ local function formatMultiplier(mult)
 end
 
 -------------------------------------------------
--- HTTP REQUESTS
+-- HTTP REQUESTS (ĐÃ BẮT LỖI CHI TIẾT)
 -------------------------------------------------
 local function httpPost(url, payload)
     task.spawn(function()
-        pcall(function()
-            HttpService:PostAsync(url, HttpService:JSONEncode(payload), Enum.HttpContentType.ApplicationJson)
+        local success, err = pcall(function()
+            local jsonPayload = HttpService:JSONEncode(payload)
+            -- BẮT BUỘC: Thêm Enum.HttpContentType.ApplicationJson cho JSON
+            HttpService:PostAsync(url, jsonPayload, Enum.HttpContentType.ApplicationJson)
         end)
+
+        if success then
+            print("[✅ FruitStock] Pushed data successfully to:", url)
+        else
+            warn("[❌ FruitStock] HTTP POST Failed for", url)
+            warn("[❌ Error Details]:", err)
+        end
     end)
 end
 
@@ -51,13 +57,12 @@ end
 local function pushToAPI(fruitList, snapshot, serverOffset)
     if not API_URL or API_URL == "" then return end
     
-    -- Chỉnh key khớp 100% với req.body của bạn
     local payload = {
         reportedAt = os.time() + serverOffset,
         lastRefreshAt = snapshot.lastRefreshUnix or 0,
         nextRefreshAt = snapshot.nextRefreshUnix or 0,
         cycleSeconds = snapshot.cycleSeconds or 0,
-        entries = fruitList -- Đổi từ fruits thành entries
+        entries = fruitList
     }
     
     httpPost(API_URL, payload)
@@ -129,9 +134,17 @@ end
 -- HANDLE DATA FROM SERVER
 -------------------------------------------------
 local function onSnapshotReceived(snapshot)
-    if typeof(snapshot) ~= "table" then return end
+    if typeof(snapshot) ~= "table" then 
+        warn("[FruitStock] Snapshot received but it's not a table!") 
+        return 
+    end
     local entries = snapshot.entries
-    if typeof(entries) ~= "table" then return end
+    if typeof(entries) ~= "table" then 
+        warn("[FruitStock] Snapshot received but 'entries' is missing!") 
+        return 
+    end
+
+    print("[🌱 FruitStock] Valid snapshot received! Processing data...")
 
     local serverOffset = 0
     if typeof(snapshot.server_now_unix) == "number" then
@@ -171,7 +184,7 @@ local function onSnapshotReceived(snapshot)
         })
     end
 
-    -- Push lên API và Webhook
+    print("[🌱 FruitStock] Processed", #fruitList, "items. Pushing to API & Webhook...")
     pushToAPI(fruitList, snapshot, serverOffset)
     pushToWebhook(fruitList, snapshot)
 end
@@ -181,11 +194,15 @@ end
 -------------------------------------------------
 Networking.FruitStock.Snapshot.OnClientEvent:Connect(onSnapshotReceived)
 
+print("[🌱 FruitStock] Firing initial request...")
 local ok, result = pcall(function()
     return Networking.FruitStock.Request:Fire()
 end)
+
 if ok and result then
     onSnapshotReceived(result)
+elseif not ok then
+    warn("[❌ FruitStock] Failed to fire initial request:", result)
+else
+    warn("[❌ FruitStock] Initial request fired but returned nil.")
 end
-
-print("[🌱 FruitStock] API & Webhook Pusher is running silently!")
