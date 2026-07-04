@@ -1,9 +1,11 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
+-------------------------------------------------
+-- CẤU HÌNH WEBHOOK / API
+-------------------------------------------------
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1522976371779833876/gP7rTiS61XchHLMuzNpzzwygUzB4zTCiJV-CwLpPHz3FXQeLXoPBJ4bdizRkJOYgtfIq"
-
-local API_URL = "https://v2.nthanhtai.xyz/api/fruit-price" 
+local API_URL = "http://node1.minet.vn:25960/api/fruit-price" 
 
 -------------------------------------------------
 -- MODULES
@@ -32,21 +34,48 @@ local function formatMultiplier(mult)
 end
 
 -------------------------------------------------
--- HTTP REQUESTS (ĐÃ BẮT LỖI CHI TIẾT)
+-- HTTP REQUESTS (DÙNG API EXECUTOR + BẮT LỖI CHI TIẾT)
 -------------------------------------------------
 local function httpPost(url, payload)
     task.spawn(function()
-        local success, err = pcall(function()
-            local jsonPayload = HttpService:JSONEncode(payload)
-            -- BẮT BUỘC: Thêm Enum.HttpContentType.ApplicationJson cho JSON
-            HttpService:PostAsync(url, jsonPayload, Enum.HttpContentType.ApplicationJson)
+        local jsonPayload = nil
+        local encodeOk, encodeErr = pcall(function()
+            jsonPayload = HttpService:JSONEncode(payload)
         end)
 
-        if success then
-            print("[✅ FruitStock] Pushed data successfully to:", url)
+        if not encodeOk or not jsonPayload then
+            warn("[❌ FruitStock] JSON Encode Failed:", encodeErr)
+            return
+        end
+
+        local requestFunc = http_request or request or http.request or syn.request or fluxus.request
+        
+        if requestFunc then
+            local success, response = pcall(function()
+                return requestFunc({
+                    Url = url,
+                    Method = "POST",
+                    Body = jsonPayload,
+                    Headers = {
+                        ["Content-Type"] = "application/json"
+                    }
+                })
+            end)
+
+            if success and response then
+                if response.StatusCode and response.StatusCode >= 200 and response.StatusCode < 300 then
+                    print("[✅ FruitStock] Pushed successfully to:", "| Status:", response.StatusCode)
+                else
+                    warn("[❌ FruitStock] Server rejected request for:", url, "| Status:", response.StatusCode or "Unknown")
+                    -- In ra lý do server từ chối (rất quan trọng để debug 400 Bad Request)
+                    warn("[❌ Server Response Body]:", response.Body or "No body")
+                end
+            else
+                warn("[❌ FruitStock] Executor HTTP Failed for", url)
+                warn("[❌ Error Details]:", response or "Unknown error")
+            end
         else
-            warn("[❌ FruitStock] HTTP POST Failed for", url)
-            warn("[❌ Error Details]:", err)
+            warn("[❌ FruitStock] No executor HTTP function found!")
         end
     end)
 end
@@ -62,7 +91,7 @@ local function pushToAPI(fruitList, snapshot, serverOffset)
         lastRefreshAt = snapshot.lastRefreshUnix or 0,
         nextRefreshAt = snapshot.nextRefreshUnix or 0,
         cycleSeconds = snapshot.cycleSeconds or 0,
-        entries = fruitList
+        fruits = fruitList
     }
     
     httpPost(API_URL, payload)
@@ -100,7 +129,11 @@ local function pushToWebhook(fruitList, snapshot)
     local normalItems = {}
 
     for _, fruit in ipairs(fruitList) do
-        local line = string.format("**%s** | `Base: %d` | `%s` | [🖼 IMG](%s)", fruit.name, fruit.value, fruit.multiplierText, fruit.image)
+        local line = string.format("**%s** | `Base: %d` | `%s`", fruit.name, fruit.value, fruit.multiplierText)
+        -- Bỏ link ảnh vào text (Discord không nhận rbxassetid làm URL nên chỉ để text cho đẹp)
+        if fruit.image ~= "" then
+            line = line .. string.format(" | [🖼 IMG](%s)", fruit.image)
+        end
         
         if fruit.tier == "mega" then
             table.insert(megaBigItems, 1, "🟣 " .. line)
@@ -116,17 +149,31 @@ local function pushToWebhook(fruitList, snapshot)
     local embed = {
         title = "🌱 Fruit Stock Updated!",
         color = 5793266,
-        fields = {},
+        -- KHÔNG KHỞI TẠO fields = {} ĐỂ TRÁNH JSON ENCODE BIẾN NÓ THÀNH OBJECT {}
         description = "Next refresh: <t:" .. tostring(nextRefresh) .. ":R> (`" .. tostring(nextRefresh) .. "`)"
     }
 
-    if #fruitList > 0 and fruitList[1].image ~= "" then
-        embed.thumbnail = { url = fruitList[1].image }
+    -- Xóa hoàn toàn Thumbnail vì Discord không chấp nhận link rbxassetid://, sẽ gây lỗi 400
+    -- if #fruitList > 0 and fruitList[1].image ~= "" then
+    --     embed.thumbnail = { url = fruitList[1].image }
+    -- end
+
+    -- Khởi tạo mảng fields CHỈ KHI CÓ DATA
+    local hasFields = false
+    if #megaBigItems > 0 or #normalItems > 0 then
+        embed.fields = {}
+        hasFields = true
     end
 
-    addFieldsSafe(embed, "Mega / Big Fruits", "✨", megaBigItems)
-    addFieldsSafe(embed, "Normal Fruits", "🥚", normalItems)
+    if #megaBigItems > 0 then
+        addFieldsSafe(embed, "Mega / Big Fruits", "✨", megaBigItems)
+    end
 
+    if #normalItems > 0 then
+        addFieldsSafe(embed, "Normal Fruits", "🥚", normalItems)
+    end
+
+    -- Đẩy đi
     httpPost(WEBHOOK_URL, { embeds = { embed } })
 end
 
@@ -134,17 +181,9 @@ end
 -- HANDLE DATA FROM SERVER
 -------------------------------------------------
 local function onSnapshotReceived(snapshot)
-    if typeof(snapshot) ~= "table" then 
-        warn("[FruitStock] Snapshot received but it's not a table!") 
-        return 
-    end
+    if typeof(snapshot) ~= "table" then return end
     local entries = snapshot.entries
-    if typeof(entries) ~= "table" then 
-        warn("[FruitStock] Snapshot received but 'entries' is missing!") 
-        return 
-    end
-
-    print("[🌱 FruitStock] Valid snapshot received! Processing data...")
+    if typeof(entries) ~= "table" then return end
 
     local serverOffset = 0
     if typeof(snapshot.server_now_unix) == "number" then
@@ -184,7 +223,6 @@ local function onSnapshotReceived(snapshot)
         })
     end
 
-    print("[🌱 FruitStock] Processed", #fruitList, "items. Pushing to API & Webhook...")
     pushToAPI(fruitList, snapshot, serverOffset)
     pushToWebhook(fruitList, snapshot)
 end
@@ -194,15 +232,11 @@ end
 -------------------------------------------------
 Networking.FruitStock.Snapshot.OnClientEvent:Connect(onSnapshotReceived)
 
-print("[🌱 FruitStock] Firing initial request...")
 local ok, result = pcall(function()
     return Networking.FruitStock.Request:Fire()
 end)
-
 if ok and result then
     onSnapshotReceived(result)
-elseif not ok then
-    warn("[❌ FruitStock] Failed to fire initial request:", result)
-else
-    warn("[❌ FruitStock] Initial request fired but returned nil.")
 end
+
+print("[🌱 FruitStock] API & Webhook Pusher (v3 Fix 400 Error) loaded!")
