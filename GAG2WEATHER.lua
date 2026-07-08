@@ -37,15 +37,12 @@ local weatherStyle = {
 }
 
 -- ========================================================
--- MOON STYLES (from TimeCycleData)
--- Used for styling only (color/icon/description). ANY moon/phase
--- name will still be sent even if it's not listed here — a
--- generic fallback style is used in that case.
+-- MOON STYLES
 -- ========================================================
 local moonStyle = {
     ["Bloodmoon"]    = { color = 10027008, icon = "🔴", rare = true,  chance = "2%",  des = "A mysterious crimson moon rises. and applied bloodlit mutations." },
-    ["Goldmoon"]     = { color = 16766720, icon = "🌕", rare = true,  chance = "13%", des = "A golden moon illuminates the garden and drop gold seeds." },
-    ["Rainbow Moon"] = { color = 10040063, icon = "🌈", rare = true,  chance = "6%",  des = "A colorful rainbow moon shines and drop rainbow seeds." },
+    ["Goldmoon"]     = { color = 16766720, icon = "🌕", rare = true,  chance = "13%", des = "Spawns Golden Seeds and may grant Midas or turn nearby plants golden." },
+    ["Rainbow Moon"] = { color = 10040063, icon = "🌈", rare = true,  chance = "6%",  des = "Spawns Rainbow Seeds and may grant Star-Powered, turn nearby plants rainbow, or spawn a Rainbow Pet." },
     ["Mega Moon"]    = { color = 255,      icon = "🌑", rare = true,  chance = "2%",  des = "Spawns mega seeds randomly." },
     ["Moon"]         = { color = 1973021,  icon = "🌙", rare = false, chance = "79%", des = "Dark skybox, players can steal plants." },
     ["Day"]          = { color = 16765952, icon = "☀️", rare = false, chance = "",    des = "" },
@@ -60,14 +57,10 @@ local function sendRequest(body)
 
     if typeof(http) == "table" and typeof(http.request) == "function" then
         reqFunc = function()
-            -- Most executors (including Delta) expect capitalized keys here,
-            -- even though the function lives under the lowercase `http` table.
             local ok1, res1 = pcall(function()
                 return http.request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
             end)
             if ok1 then return res1 end
-
-            -- Fallback: some implementations really do want lowercase keys.
             return http.request({ url = WEBHOOK_URL, method = "POST", headers = { ["Content-Type"] = "application/json" }, body = body })
         end
     elseif typeof(request) == "function" then
@@ -85,17 +78,15 @@ local function sendRequest(body)
     end
 
     if not reqFunc then
-        return false, "No HTTP request function available in this executor (http.request/request/http_request/syn.request all missing)."
+        return false, "No HTTP request function available in this executor."
     end
 
     local ok, result = pcall(reqFunc)
 
     if not ok then
-        -- pcall failed: result is the error message
         return false, "Request threw an error: " .. tostring(result)
     end
 
-    -- result is the response table (StatusCode/Status/Success fields vary by executor)
     if typeof(result) == "table" then
         local status = result.StatusCode or result.status
         local success = result.Success
@@ -148,21 +139,14 @@ end
 
 -- ========================================================
 -- SEND MOON EVENT
--- Sends for ANY moon/phase (Bloodmoon, Goldmoon, Rainbow Moon,
--- Mega Moon, normal Moon, Day, Sunset, or anything not in the
--- moonStyle table at all — falls back to a generic style).
 -- ========================================================
 local function sendMoonWebhook(moonName)
     local style = moonStyle[moonName] or { color = 16777215, icon = "🌙", rare = false, chance = "", des = "" }
 
-    -- Calculate night end time
-    -- Night phase lasts 120s from TimeCycleData
-    -- Day cycle total = 450+30+120 = 600s
     local now = os.time()
     local cycleTotal = 600
     local nightDuration = 120
     local posInCycle = now % cycleTotal
-    -- Night starts at 480 (450+30), ends at 600
     local nightStart = 480
     local nightEnd = cycleTotal
     local secondsLeftInNight = nightEnd - posInCycle
@@ -214,7 +198,6 @@ else
         hookWeather(entry.Name)
     end
 
-    -- Check immediately if any weather already active
     for _, entry in ipairs(weatherDataList) do
         if WeatherValues:GetAttribute(entry.Name .. "_Playing") then
             local endUnix = WeatherValues:GetAttribute(entry.Name .. "_EndTime") or 0
@@ -225,13 +208,12 @@ end
 
 -- ========================================================
 -- MONITOR MOON via workspace.ActiveWeather attribute
--- TimeCycleController sets this each cycle
--- Sends for EVERY moon/phase change, not just a whitelisted set
+-- BỎ DAY VÀ MOON (NIGHT THƯỜNG), CHỈ GỬI RARE MOON
 -- ========================================================
 local lastMoon = workspace:GetAttribute("ActiveWeather")
 
 -- Check on start
-if lastMoon then
+if lastMoon and lastMoon ~= "Day" and lastMoon ~= "Moon" and lastMoon ~= "Sunset" then
     sendMoonWebhook(lastMoon)
 end
 
@@ -239,7 +221,11 @@ workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(function()
     local current = workspace:GetAttribute("ActiveWeather")
     if current and current ~= lastMoon then
         lastMoon = current
-        sendMoonWebhook(current)
+        
+        -- Chỉ gửi webhook nếu KHÔNG phải Day, Night (Moon) hoặc Sunset
+        if current ~= "Day" and current ~= "Moon" and current ~= "Sunset" then
+            sendMoonWebhook(current)
+        end
     end
 end)
 
@@ -247,14 +233,17 @@ end)
 workspace:GetAttributeChangedSignal("ActivePhase"):Connect(function()
     local phase = workspace:GetAttribute("ActivePhase")
     if phase == "Night" then
-        -- Re-check ActiveWeather when night starts
-        task.wait(1) -- give server time to set ActiveWeather
+        task.wait(1)
         local current = workspace:GetAttribute("ActiveWeather")
-        if current then
+        if current and current ~= lastMoon then
             lastMoon = current
-            sendMoonWebhook(current)
+            
+            -- Chống lặp và bỏ Day/Moon
+            if current ~= "Day" and current ~= "Moon" and current ~= "Sunset" then
+                sendMoonWebhook(current)
+            end
         end
     end
 end)
 
-print("[WEATHER] Monitor running — watching weather events + all moon phases...")
+print("[WEATHER] Monitor running — watching weather events + rare moons only!")
