@@ -40,10 +40,10 @@ local weatherStyle = {
 -- MOON STYLES
 -- ========================================================
 local moonStyle = {
-    ["Bloodmoon"]    = { color = 10027008, icon = "🔴", rare = true,  chance = "2%",  des = "A mysterious crimson moon rises. and applied bloodlit mutations." },
+    ["Bloodmoon"]    = { color = 10027008, icon = "🔴", rare = true,  chance = "2%",  des = "A crimson moon that applies the Bloodlit mutation to nearby plants." },
     ["Goldmoon"]     = { color = 16766720, icon = "🌕", rare = true,  chance = "13%", des = "Spawns Golden Seeds and may grant Midas or turn nearby plants golden." },
     ["Rainbow Moon"] = { color = 10040063, icon = "🌈", rare = true,  chance = "6%",  des = "Spawns Rainbow Seeds and may grant Star-Powered, turn nearby plants rainbow, or spawn a Rainbow Pet." },
-    ["Mega Moon"]    = { color = 255,      icon = "🌑", rare = true,  chance = "2%",  des = "Spawns mega seeds randomly." },
+    ["Mega Moon"]    = { color = 255,      icon = "🌑", rare = true,  chance = "2%",  des = "A massive silver moon that spawns Mega Seeds randomly." },
     ["Moon"]         = { color = 1973021,  icon = "🌙", rare = false, chance = "79%", des = "Dark skybox, players can steal plants." },
     ["Day"]          = { color = 16765952, icon = "☀️", rare = false, chance = "",    des = "" },
     ["Sunset"]       = { color = 16744272, icon = "🌅", rare = false, chance = "",    des = "" },
