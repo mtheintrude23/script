@@ -2,9 +2,10 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- ========================================================
--- WEBHOOK CONFIG
+-- CONFIG
 -- ========================================================
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
+local API_URL     = "http://node1.minet.vn:25960/api/ghz/weather"
 -- ========================================================
 
 local rawModule = require(ReplicatedStorage.SharedModules.WeatherData)
@@ -34,6 +35,8 @@ local weatherStyle = {
     ["Starfall"]  = { color = 10181046, icon = "💫" },
     ["Aurora"]    = { color = 5763719,  icon = "🌌" },
     ["Clear"]     = { color = 16753920, icon = "☀️" },
+    ["Eclipse"]   = { color = 2829099,  icon = "🌑" },
+    ["Sunburst"]  = { color = 16744192, icon = "🌟" },
 }
 
 -- ========================================================
@@ -50,30 +53,30 @@ local moonStyle = {
 }
 
 -- ========================================================
--- HTTP SEND
+-- HTTP SEND (dùng chung cho cả webhook và API)
 -- ========================================================
-local function sendRequest(body)
+local function sendRequest(url, body)
     local reqFunc = nil
 
     if typeof(http) == "table" and typeof(http.request) == "function" then
         reqFunc = function()
             local ok1, res1 = pcall(function()
-                return http.request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+                return http.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
             end)
             if ok1 then return res1 end
-            return http.request({ url = WEBHOOK_URL, method = "POST", headers = { ["Content-Type"] = "application/json" }, body = body })
+            return http.request({ url = url, method = "POST", headers = { ["Content-Type"] = "application/json" }, body = body })
         end
     elseif typeof(request) == "function" then
         reqFunc = function()
-            return request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+            return request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         end
     elseif typeof(http_request) == "function" then
         reqFunc = function()
-            return http_request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+            return http_request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         end
     elseif syn and typeof(syn.request) == "function" then
         reqFunc = function()
-            return syn.request({ Url = WEBHOOK_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+            return syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         end
     end
 
@@ -88,7 +91,7 @@ local function sendRequest(body)
     end
 
     if typeof(result) == "table" then
-        local status = result.StatusCode or result.status
+        local status  = result.StatusCode or result.status
         local success = result.Success
         if success == false then
             return false, "Request failed: " .. tostring(result.StatusMessage or result.Body or "unknown error")
@@ -102,7 +105,19 @@ local function sendRequest(body)
 end
 
 local function sendWebhook(payload)
-    return sendRequest(HttpService:JSONEncode(payload))
+    return sendRequest(WEBHOOK_URL, HttpService:JSONEncode(payload))
+end
+
+local function pushApi(payload)
+    return sendRequest(API_URL, HttpService:JSONEncode(payload))
+end
+
+-- Rounded to 5-min bucket (matches parser.js)
+local function getRounded5MinTimestamps(refUnix)
+    local FIVE_MIN = 5 * 60
+    local reportedAt   = math.floor(refUnix / FIVE_MIN) * FIVE_MIN
+    local nextUpdateAt = reportedAt + FIVE_MIN
+    return reportedAt, nextUpdateAt
 end
 
 -- ========================================================
@@ -118,6 +133,7 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
         endsField = "<t:" .. math.floor(endTimeUnix) .. ":R> (<t:" .. math.floor(endTimeUnix) .. ":F>)"
     end
 
+    -- Discord webhook
     local ok, err = sendWebhook({
         embeds = {{
             title       = style.icon .. " Weather: " .. weatherName,
@@ -135,6 +151,29 @@ local function sendWeatherWebhook(weatherName, endTimeUnix)
     else
         warn("[WEATHER] FAILED to send -> " .. weatherName .. " | " .. tostring(err))
     end
+
+    -- API push
+    local now = os.time()
+    local refUnix = (endTimeUnix and endTimeUnix > 0) and (endTimeUnix - 60) or now
+    local reportedAt, nextUpdateAt = getRounded5MinTimestamps(refUnix)
+    local duration = (endTimeUnix and endTimeUnix > 0) and math.max(0, endTimeUnix - now) or 300
+
+    local apiOk, apiErr = pushApi({
+        type         = "weather",
+        reportedAt   = reportedAt,
+        nextUpdateAt = nextUpdateAt,
+        weather      = {{
+            type          = weatherName,
+            description   = desc,
+            duration      = duration,
+            end_time_unix = endTimeUnix or 0,
+        }},
+    })
+    if apiOk then
+        print("[WEATHER] API pushed -> " .. weatherName)
+    else
+        warn("[WEATHER] API FAILED -> " .. weatherName .. " | " .. tostring(apiErr))
+    end
 end
 
 -- ========================================================
@@ -145,20 +184,17 @@ local function sendMoonWebhook(moonName)
 
     local now = os.time()
     local cycleTotal = 600
-    local nightDuration = 120
     local posInCycle = now % cycleTotal
-    local nightStart = 480
-    local nightEnd = cycleTotal
-    local secondsLeftInNight = nightEnd - posInCycle
+    local secondsLeftInNight = cycleTotal - posInCycle
     if secondsLeftInNight < 0 then secondsLeftInNight = 0 end
     local endUnix = now + secondsLeftInNight
 
     local endsField = "<t:" .. endUnix .. ":R> (<t:" .. endUnix .. ":F>)"
     local desc = style.des ~= "" and style.des or "No description."
     local chanceText = style.chance ~= "" and ("Spawn chance: **" .. style.chance .. "**") or ""
-
     local titlePrefix = style.rare and "Rare Moon" or "Moon Phase"
 
+    -- Discord webhook
     local ok, err = sendWebhook({
         embeds = {{
             title       = style.icon .. " " .. titlePrefix .. ": " .. moonName .. "!",
@@ -175,6 +211,28 @@ local function sendMoonWebhook(moonName)
         print("[MOON] Sent -> " .. moonName)
     else
         warn("[MOON] FAILED to send -> " .. moonName .. " | " .. tostring(err))
+    end
+
+    -- API push
+    local refUnix = endUnix - 60
+    local reportedAt, nextUpdateAt = getRounded5MinTimestamps(refUnix)
+
+    local apiOk, apiErr = pushApi({
+        type         = "moon",
+        reportedAt   = reportedAt,
+        nextUpdateAt = nextUpdateAt,
+        moon         = {
+            type          = moonName,
+            description   = desc,
+            chance        = style.chance,
+            duration      = secondsLeftInNight,
+            end_time_unix = endUnix,
+        },
+    })
+    if apiOk then
+        print("[MOON] API pushed -> " .. moonName)
+    else
+        warn("[MOON] API FAILED -> " .. moonName .. " | " .. tostring(apiErr))
     end
 end
 
@@ -212,7 +270,6 @@ end
 -- ========================================================
 local lastMoon = workspace:GetAttribute("ActiveWeather")
 
--- Check on start
 if lastMoon and lastMoon ~= "Day" and lastMoon ~= "Moon" and lastMoon ~= "Sunset" then
     sendMoonWebhook(lastMoon)
 end
@@ -221,15 +278,12 @@ workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(function()
     local current = workspace:GetAttribute("ActiveWeather")
     if current and current ~= lastMoon then
         lastMoon = current
-        
-        -- Chỉ gửi webhook nếu KHÔNG phải Day, Night (Moon) hoặc Sunset
         if current ~= "Day" and current ~= "Moon" and current ~= "Sunset" then
             sendMoonWebhook(current)
         end
     end
 end)
 
--- Also watch ActivePhase to catch night start
 workspace:GetAttributeChangedSignal("ActivePhase"):Connect(function()
     local phase = workspace:GetAttribute("ActivePhase")
     if phase == "Night" then
@@ -237,8 +291,6 @@ workspace:GetAttributeChangedSignal("ActivePhase"):Connect(function()
         local current = workspace:GetAttribute("ActiveWeather")
         if current and current ~= lastMoon then
             lastMoon = current
-            
-            -- Chống lặp và bỏ Day/Moon
             if current ~= "Day" and current ~= "Moon" and current ~= "Sunset" then
                 sendMoonWebhook(current)
             end
