@@ -3,21 +3,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local stockValues = ReplicatedStorage:WaitForChild("StockValues")
 
 -- ========================================================
--- CONFIG (fill in your own values here)
+-- CONFIG
 -- ========================================================
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1483471565130825791/-LjvHco3PqatsN5KAmDW96yktGJr9gKj-2E6wqL5EWZzOK8UHSEzQo2FF4vSGcaNIcGD"
-
--- API endpoint that receives the raw JSON data directly (NOT a Discord webhook).
 local API_URL = "http://node1.minet.vn:25960/api/ghz/stock"
-
--- Set to false if you don't want the Discord notification anymore, only the API push
 local SEND_WEBHOOK_NOTIFICATION = true
 
--- Debounce window (seconds) to batch multiple Value changes that land on the
--- same frame/tick (e.g. 5 items in the same shop updating together).
--- Kept fast (0.05s) — the server now guards against transient-empty pushes
--- by keeping old category data when a push arrives empty but not yet expired.
-local PUSH_DEBOUNCE_SECONDS = 2.5
+-- ⬇️ TĂNG LÊN 1.5–2 giây để đợi CẢ 3 shop cập nhật xong rồi mới push
+local PUSH_DEBOUNCE_SECONDS = 1.5
 -- ========================================================
 
 if not WEBHOOK_URL or WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_URL_HERE" then
@@ -26,23 +19,19 @@ if not WEBHOOK_URL or WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_
 end
 
 if not API_URL or API_URL == "" or API_URL == "YOUR_API_URL_HERE" then
-    warn("⚠️ API_URL is not set — the script will NOT push directly to the API, only send the webhook (if enabled).")
+    warn("⚠️ API_URL is not set — the script will NOT push directly to the API.")
 end
 
--- key = field name used in the payload sent to the API, label = display title, emoji for the embed
 local shopConfigs = {
     SeedShop  = { key = "seeds", label = "🌱 Seeds Restocked",       color = 3066993 },
     GearShop  = { key = "gear",  label = "⚙️ Gear Stock Restocked",  color = 3447003 },
     CrateShop = { key = "props", label = "📦 Crates Stock",          color = 15844367 },
 }
 
--- How long until the next restock, in milliseconds (used for "nextUpdateAt").
-local NEXT_UPDATE_INTERVAL_MS = 5 * 60 * 1000 -- 5 minutes
-
--- Fixed order so the embed always displays Seeds -> Gear -> Crates
+local NEXT_UPDATE_INTERVAL_MS = 5 * 60 * 1000
 local SHOP_ORDER = { "SeedShop", "GearShop", "CrateShop" }
 
--- ── Shared HTTP helper for both the webhook and the API push ──
+-- ── Shared HTTP helper ──
 local function httpPostJson(url, bodyTable)
     if not url or url == "" or url:match("^YOUR_") then
         return false, "URL is not configured"
@@ -70,10 +59,8 @@ end
 -- ── Read all current items (Value > 0) for one shop ──
 local function getShopItems(shopName)
     local items = {}
-
     local shopFolder = stockValues:FindFirstChild(shopName)
     if not shopFolder then return items end
-
     local itemsFolder = shopFolder:FindFirstChild("Items")
     if not itemsFolder then return items end
 
@@ -95,7 +82,7 @@ local function collectAllShops()
     return snapshot
 end
 
--- ── Build a SINGLE combined embed, each shop as its own code-block section ──
+-- ── Build combined embed ──
 local function buildCombinedEmbed(snapshot)
     local descParts = {}
     local hasAny = false
@@ -122,15 +109,13 @@ local function buildCombinedEmbed(snapshot)
     return {
         title = "🛒 Stock Update",
         description = table.concat(descParts, "\n\n"),
-        color = 5793266, -- neutral color for the combined embed
+        color = 5793266,
         timestamp = DateTime.now():ToIsoDate(),
         footer = { text = "Grow a Garden 2" }
     }
 end
 
--- ── Build the JSON payload sent directly to the API ──
--- Matches the schema: { seeds: [{name, qty}], gear: [...], props: [...], reportedAt, nextUpdateAt }
--- reportedAt / nextUpdateAt are Unix timestamps in MILLISECONDS.
+-- ── Build API payload ──
 local function buildApiPayload(snapshot)
     local now = DateTime.now()
     local reportedAt = now.UnixTimestampMillis
@@ -154,7 +139,7 @@ local function buildApiPayload(snapshot)
     return payload
 end
 
--- ── Send out: 1 webhook embed (if enabled) + push JSON directly to the API ──
+-- ── Send out webhook + API push ──
 local function pushUpdate()
     local snapshot = collectAllShops()
 
@@ -179,24 +164,23 @@ local function pushUpdate()
     end
 end
 
--- ── Push immediately on ANY shop change (no waiting for the other shops) ──
-local pendingPush = false
+-- ============================================================
+-- ✅ FIX: Trailing-edge debounce — reset timer mỗi thay đổi
+-- ============================================================
+local debounceThread = nil
 
 local function requestPush()
-    if pendingPush then return end
-    pendingPush = true
-
-    if PUSH_DEBOUNCE_SECONDS > 0 then
-        -- tiny debounce just to batch simultaneous item changes in the same tick
-        task.delay(PUSH_DEBOUNCE_SECONDS, function()
-            pushUpdate()
-            pendingPush = false
-        end)
-    else
-        pushUpdate()
-        pendingPush = false
+    -- Hủy timer cũ nếu đang có, tạo timer mới
+    if debounceThread then
+        task.cancel(debounceThread)
     end
+
+    debounceThread = task.delay(PUSH_DEBOUNCE_SECONDS, function()
+        debounceThread = nil
+        pushUpdate()
+    end)
 end
+-- ============================================================
 
 local function startListening()
     for shopName, _ in pairs(shopConfigs) do
@@ -219,11 +203,10 @@ local function startListening()
             end
         end
     end
-    print("🚀 [System]: LIVE PUSH mode enabled (pushes immediately on any shop change)!")
+    print("🚀 [System]: LIVE PUSH mode enabled (trailing-edge debounce)!")
 end
 
--- Initial baseline push with whatever is currently in stock when the script starts
+-- Initial baseline push
 pushUpdate()
 
 startListening()
-
