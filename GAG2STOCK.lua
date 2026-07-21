@@ -8,11 +8,16 @@ local stockValues = ReplicatedStorage:WaitForChild("StockValues")
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1483471565130825791/-LjvHco3PqatsN5KAmDW96yktGJr9gKj-2E6wqL5EWZzOK8UHSEzQo2FF4vSGcaNIcGD"
 
 -- API endpoint that receives the raw JSON data directly (NOT a Discord webhook).
--- Put your real API URL here (e.g. http://node1.minet.vn:25960/api/ghz/stock)
 local API_URL = "http://node1.minet.vn:25960/api/ghz/stock"
 
 -- Set to false if you don't want the Discord notification anymore, only the API push
 local SEND_WEBHOOK_NOTIFICATION = true
+
+-- Debounce window (seconds) to batch multiple Value changes that land on the
+-- same frame/tick (e.g. 5 items in the same shop updating together).
+-- Kept fast (0.05s) — the server now guards against transient-empty pushes
+-- by keeping old category data when a push arrives empty but not yet expired.
+local PUSH_DEBOUNCE_SECONDS = 0.05
 -- ========================================================
 
 if not WEBHOOK_URL or WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_URL_HERE" then
@@ -32,7 +37,6 @@ local shopConfigs = {
 }
 
 -- How long until the next restock, in milliseconds (used for "nextUpdateAt").
--- Adjust this to match the real in-game restock interval if it differs.
 local NEXT_UPDATE_INTERVAL_MS = 5 * 60 * 1000 -- 5 minutes
 
 -- Fixed order so the embed always displays Seeds -> Gear -> Crates
@@ -175,43 +179,23 @@ local function pushUpdate()
     end
 end
 
--- ── Wait until ALL 3 shops have changed at least once before pushing ──
--- (not just whichever shop happens to change first)
-local changedShops = {}
-for _, shopName in ipairs(SHOP_ORDER) do
-    changedShops[shopName] = false
-end
+-- ── Push immediately on ANY shop change (no waiting for the other shops) ──
+local pendingPush = false
 
-local pendingGlobalUpdate = false
+local function requestPush()
+    if pendingPush then return end
+    pendingPush = true
 
-local function allShopsChanged()
-    for _, shopName in ipairs(SHOP_ORDER) do
-        if not changedShops[shopName] then
-            return false
-        end
-    end
-    return true
-end
-
-local function resetChangedFlags()
-    for _, shopName in ipairs(SHOP_ORDER) do
-        changedShops[shopName] = false
-    end
-end
-
-local function markShopChanged(shopName)
-    changedShops[shopName] = true
-
-    if pendingGlobalUpdate then return end
-    if not allShopsChanged() then return end
-
-    pendingGlobalUpdate = true
-    -- small delay to catch any last-moment changes that land at the same time
-    task.delay(0.5, function()
+    if PUSH_DEBOUNCE_SECONDS > 0 then
+        -- tiny debounce just to batch simultaneous item changes in the same tick
+        task.delay(PUSH_DEBOUNCE_SECONDS, function()
+            pushUpdate()
+            pendingPush = false
+        end)
+    else
         pushUpdate()
-        resetChangedFlags()
-        pendingGlobalUpdate = false
-    end)
+        pendingPush = false
+    end
 end
 
 local function startListening()
@@ -222,27 +206,24 @@ local function startListening()
             if itemsFolder then
                 for _, child in ipairs(itemsFolder:GetChildren()) do
                     if string.find(child.ClassName, "Value") then
-                        child.Changed:Connect(function()
-                            markShopChanged(shopName)
-                        end)
+                        child.Changed:Connect(requestPush)
                     end
                 end
 
                 itemsFolder.ChildAdded:Connect(function(child)
                     if string.find(child.ClassName, "Value") then
-                        child.Changed:Connect(function()
-                            markShopChanged(shopName)
-                        end)
-                        markShopChanged(shopName)
+                        child.Changed:Connect(requestPush)
+                        requestPush()
                     end
                 end)
             end
         end
     end
-    print("🚀 [System]: STOCK SCHEDULE mode enabled (waits for Seeds + Gear + Crates to all change, then pushes once)!")
+    print("🚀 [System]: LIVE PUSH mode enabled (pushes immediately on any shop change)!")
 end
 
 -- Initial baseline push with whatever is currently in stock when the script starts
 pushUpdate()
 
 startListening()
+
