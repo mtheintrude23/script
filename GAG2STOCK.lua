@@ -17,7 +17,7 @@ local SEND_WEBHOOK_NOTIFICATION = true
 -- same frame/tick (e.g. 5 items in the same shop updating together).
 -- Kept fast (0.05s) — the server now guards against transient-empty pushes
 -- by keeping old category data when a push arrives empty but not yet expired.
-local PUSH_DEBOUNCE_SECONDS = 0.05
+local PUSH_DEBOUNCE_SECONDS = 2.5
 -- ========================================================
 
 if not WEBHOOK_URL or WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_URL_HERE" then
