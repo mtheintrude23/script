@@ -6,7 +6,7 @@ local stockValues = ReplicatedStorage:WaitForChild("StockValues")
 -- CONFIG
 -- ========================================================
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1483471565130825791/-LjvHco3PqatsN5KAmDW96yktGJr9gKj-2E6wqL5EWZzOK8UHSEzQo2FF4vSGcaNIcGD"
-local API_URL = "http://node1.minet.vn:25960/api/ghz/stock"
+local API_URL = "http://paloma.hidencloud.com:24696/api/ghz/stock"
 local SEND_WEBHOOK_NOTIFICATION = true
 
 -- ⬇️ TĂNG LÊN 1.5–2 giây để đợi CẢ 3 shop cập nhật xong rồi mới push
