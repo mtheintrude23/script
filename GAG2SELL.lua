@@ -5,7 +5,7 @@ local HttpService = game:GetService("HttpService")
 -- CẤU HÌNH WEBHOOK / API
 -------------------------------------------------
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1522976371779833876/gP7rTiS61XchHLMuzNpzzwygUzB4zTCiJV-CwLpPHz3FXQeLXoPBJ4bdizRkJOYgtfIq"
-local API_URL = "http://node1.minet.vn:25960/api/fruit-price" 
+local API_URL = "http://paloma.hidencloud.com:24696/api/fruit-price" 
 
 -------------------------------------------------
 -- MODULES
