@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- CONFIG
 -- ========================================================
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1485854014431297677/o-yBaZrpDraynVuE88XHQNNBIp_W9avOSxPqxIDBTN8HLm7YvKdVZTHCPZsYloLZiElz"
-local API_URL     = "http://node1.minet.vn:25960/api/ghz/weather"
+local API_URL     = "http://paloma.hidencloud.com:24696/api/ghz/weather"
 -- ========================================================
 
 local rawModule = require(ReplicatedStorage.SharedModules.WeatherData)
