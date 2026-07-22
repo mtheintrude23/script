@@ -8,7 +8,7 @@ local Auctioneer = require(ReplicatedStorage.SharedModules.Auctioneer)
 -- ========================================================
 -- API endpoint that receives the auction data as JSON.
 -- Fill in your real URL (e.g. http://node1.minet.vn:25960/api/ghz/auction)
-local API_URL = "http://node1.minet.vn:25960/api/ghz/auction"
+local API_URL = "http://paloma.hidencloud.com:24696/api/ghz/auction"
 -- ========================================================
 
 if not API_URL or API_URL == "" or API_URL == "YOUR_API_URL_HERE" then
